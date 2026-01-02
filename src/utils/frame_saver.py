@@ -1,11 +1,25 @@
-import os
 import cv2
+import os
 
-CANDIDATE_DIR = "data/frames/candidates"
+def send_alert(frame, timestamp, score, detection_count, output_dir="data/alerts"):
+    """Send alert notification and save frame"""
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    print("\n" + "="*50)
+    print("🚨 FIGHT DETECTED! 🚨")
+    print("="*50)
+    print(f"Timestamp: {timestamp}")
+    print(f"Confidence Score: {score:.2%}")
+    print(f"Detection Count: {detection_count}")
+    print("="*50 + "\n")
 
-os.makedirs(CANDIDATE_DIR, exist_ok=True)
+    # Save frame as evidence
+    filename = os.path.join(output_dir, f"fight_detection_{detection_count}_{int(timestamp)}.jpg")
+    cv2.imwrite(filename, frame)
+    print(f"📸 Frame saved as: {filename}")
 
-def save_candidate_frame(frame, frame_id, event):
-    path = f"{CANDIDATE_DIR}/{event}_{frame_id}.jpg"
-    cv2.imwrite(path, frame)
-    return path
+    # In a real system, you would send email/SMS here
+    # send_email(frame, timestamp, score)
+    # send_telegram_notification(filename, score)
