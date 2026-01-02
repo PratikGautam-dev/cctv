@@ -88,27 +88,25 @@ def process_video(video_path, max_frames=None, show_output=True):
         cv2.putText(frame, f"Frame: {frame_num}/{total_frames}", (10, 70),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-        # Send alert and display frame if fight_score >= 0.75 (75%)
+        # Send alert and display frame ONLY if fight_score >= 0.75 (75%)
         if fight_score >= 0.75:
             cv2.putText(frame, "FIGHT DETECTED!", (10, frame_height - 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
             send_alert(frame, current_time, fight_score, detector.detection_count)
 
-            # Display the frame immediately when alert is sent
+            # Display ONLY the alert frame
             if show_output:
                 print(f"🚨 Displaying high confidence detection at frame {frame_num}/{total_frames}\n")
-                cv2.imshow('Fight Detection', frame)
-                cv2.waitKey(100)  # Show for 100ms
+                cv2.imshow('Fight Detection - ALERT', frame)
+                cv2.waitKey(2000)  # Show alert for 2 seconds
 
-        # Optional: Show periodic updates for medium confidence frames
-        elif show_output and frame_num % 20 == 0:
-            if fight_score > 0.50:
-                print(f"Processing frame {frame_num}/{total_frames} - Score: {fight_score:.2%}")
-            cv2.imshow('Fight Detection', frame)
-            cv2.waitKey(1)  # Show for 1ms
+        # Print progress every 50 frames (but don't show video)
+        if frame_num % 50 == 0:
+            print(f"Processing... Frame {frame_num}/{total_frames} - Current Score: {fight_score:.2%}")
 
         # Allow user to quit with 'q' key
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        key = cv2.waitKey(1)
+        if key & 0xFF == ord('q'):
             print("\n⚠️ User interrupted processing")
             break
 

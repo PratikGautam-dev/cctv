@@ -1,11 +1,11 @@
 # Core numerical
 numpy==1.26.4
 
-# MediaPipe dependencies
-protobuf==4.25.8
-mediapipe==0.10.11
+# MediaPipe-compatible protobuf (IMPORTANT)
+protobuf>=3.20.3,<4.0.0
 
 # Computer vision
+mediapipe==0.10.11
 opencv-python==4.9.0.80
 
 # Utilities
