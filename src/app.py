@@ -1,39 +1,149 @@
+import cv2
 import time
-from detectors.fight_detector import FightDetector
-from detectors.phone_detector import detect_phone
-from utils.video_reader import video_reader
-from utils.frame_saver import save_candidate_frame
-from utils.config import config
-from verifier.gemini_verifier import verify_event
+import sys
+import os
 
-VIDEO_PATH = "data/input/test.mp4"
+# Add src directory to path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-fight_detector = FightDetector()
-candidate_frames = []
+from detectors.fight_detector import (
+    FightDetector, 
+    pose_detector, 
+    normalize_coordinates,
+    mp_drawing,
+    mp_pose,
+    mp_drawing_styles
+)
+from utils.frame_saver import send_alert
 
-for frame_id, frame in video_reader(VIDEO_PATH):
-    now = time.time()
+def process_video(video_path, max_frames=None, show_output=True):
+    """Process video and detect fights"""
 
-    # ---- LOCAL DETECTION ----
-    is_fight, fight_score, _ = fight_detector.detect(frame, frame_id, now)
-    phone_score = detect_phone(frame)
+    # Open video
+    cap = cv2.VideoCapture(video_path)
 
-    event_type = None
+    if not cap.isOpened():
+        print("❌ Error: Could not open video")
+        return
 
-    if fight_score >= config.FIGHT_TRIGGER:
-        event_type = "fight"
-    elif phone_score >= config.PHONE_TRIGGER:
-        event_type = "phone"
+    # Get video properties
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # ---- SAVE CANDIDATE FRAMES ----
-    if event_type:
-        path = save_candidate_frame(frame, frame_id, event_type)
-        candidate_frames.append(path)
+    print(f"📹 Video Info:")
+    print(f"   Resolution: {frame_width}x{frame_height}")
+    print(f"   FPS: {fps}")
+    print(f"   Total Frames: {total_frames}")
+    print(f"   Duration: {total_frames/fps:.2f} seconds\n")
 
-    # ---- SEND TO GEMINI (3 FRAMES) ----
-    if len(candidate_frames) == 3:
-        print("📤 Sending to Gemini for verification...")
-        result = verify_event(candidate_frames)
-        print(result)
+    # Initialize detector
+    detector = FightDetector()
 
-        candidate_frames.clear()
+    frame_num = 0
+    start_time = time.time()
+
+    print("🔍 Starting detection...\n")
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        if max_frames and frame_num >= max_frames:
+            break
+
+        frame_num += 1
+        current_time = time.time()
+
+        # Convert to RGB for MediaPipe
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        # Detect pose
+        results = pose_detector.process(rgb_frame)
+
+        # Extract coordinates
+        coords = None
+        if results.pose_landmarks:
+            coords = normalize_coordinates(results.pose_landmarks, frame_width, frame_height)
+
+            # Draw pose landmarks
+            mp_drawing.draw_landmarks(
+                frame,
+                results.pose_landmarks,
+                mp_pose.POSE_CONNECTIONS,
+                landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style()
+            )
+
+        # Detect fight
+        is_fight, fight_score, features = detector.detect(coords, frame_num, current_time)
+
+        # Draw information on frame
+        color = (0, 0, 255) if fight_score >= 0.75 else (0, 255, 0) if fight_score > 0.4 else (255, 255, 255)
+
+        cv2.putText(frame, f"Score: {fight_score:.2%}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
+        cv2.putText(frame, f"Frame: {frame_num}/{total_frames}", (10, 70),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+        # Send alert and display frame if fight_score >= 0.75 (75%)
+        if fight_score >= 0.75:
+            cv2.putText(frame, "FIGHT DETECTED!", (10, frame_height - 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
+            send_alert(frame, current_time, fight_score, detector.detection_count)
+
+            # Display the frame immediately when alert is sent
+            if show_output:
+                print(f"🚨 Displaying high confidence detection at frame {frame_num}/{total_frames}\n")
+                cv2.imshow('Fight Detection', frame)
+                cv2.waitKey(100)  # Show for 100ms
+
+        # Optional: Show periodic updates for medium confidence frames
+        elif show_output and frame_num % 20 == 0:
+            if fight_score > 0.50:
+                print(f"Processing frame {frame_num}/{total_frames} - Score: {fight_score:.2%}")
+            cv2.imshow('Fight Detection', frame)
+            cv2.waitKey(1)  # Show for 1ms
+
+        # Allow user to quit with 'q' key
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            print("\n⚠️ User interrupted processing")
+            break
+
+    # Cleanup
+    cap.release()
+    cv2.destroyAllWindows()
+    processing_time = time.time() - start_time
+
+    print(f"\n✅ Processing complete!")
+    print(f"   Total frames processed: {frame_num}")
+    print(f"   Processing time: {processing_time:.2f} seconds")
+    print(f"   Average FPS: {frame_num/processing_time:.2f}")
+    print(f"   Total fights detected: {detector.detection_count}")
+
+if __name__ == "__main__":
+    print("\n" + "="*60)
+    print("FIGHT DETECTION SYSTEM - READY")
+    print("="*60)
+    print("\nPress 'q' to quit during processing\n")
+    
+    # Set video path
+    video_path = "data/input/test.mp4"
+    
+    # Check if video exists
+    if not os.path.exists(video_path):
+        print(f"❌ Error: Video not found at {video_path}")
+        print("Please place your video file in data/input/test.mp4")
+        sys.exit(1)
+    
+    print(f"✅ Video found: {video_path}")
+    print("\n🚀 Starting processing...\n")
+
+    # Process the video
+    process_video(video_path, max_frames=3000, show_output=True)
+    
+    print("\n" + "="*60)
+    print("PROCESSING COMPLETE")
+    print("="*60)
