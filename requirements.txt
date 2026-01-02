@@ -1,5 +1,13 @@
-opencv-python==4.8.1.78
-mediapipe==0.10.14
+# Core numerical
 numpy==1.26.4
+
+# MediaPipe dependencies
 protobuf==4.25.8
-pillow
+mediapipe==0.10.11
+
+# Computer vision
+opencv-python==4.9.0.80
+
+# Utilities
+requests
+python-dotenv
